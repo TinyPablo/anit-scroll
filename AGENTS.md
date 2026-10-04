@@ -1,4 +1,4 @@
-# anit-scroll
+# tally-scroll
 
 Single-user tally tracker. Keep it small: no ORM, no extra services, no
 dependencies that a one-table app does not need.

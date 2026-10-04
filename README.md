@@ -42,7 +42,7 @@ npm run dev
 Manual, on the server:
 
 ```bash
-cd ~/projects/anit-scroll
+cd ~/projects/tally-scroll
 git pull
 docker compose up -d --build
 ```
