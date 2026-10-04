@@ -11,14 +11,15 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { cellKey, isFuture, type Day } from "@/lib/range";
+import { MAX_PER_HOUR, cellKey, isFuture, type Day } from "@/lib/range";
 
 type Cell = { date: string; hour: number };
+type Tally = { date: string; hour: number; count: number };
 type Now = { date: string; hour: number };
 
 type Props = {
   days: Day[];
-  tallies: Cell[];
+  tallies: Tally[];
   now: Now;
 };
 
@@ -36,7 +37,7 @@ function clientNow(): Now {
 
 export function TallyBoard({ days, tallies, now: initialNow }: Props) {
   const [marks, setMarks] = useState(
-    () => new Set(tallies.map((tally) => cellKey(tally.date, tally.hour))),
+    () => new Map(tallies.map((tally) => [cellKey(tally.date, tally.hour), tally.count])),
   );
   const [now, setNow] = useState(initialNow);
   const [selected, setSelected] = useState<Cell | null>(null);
@@ -55,27 +56,29 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
   }, []);
 
   const write = useCallback(
-    async (cell: Cell, on: boolean) => {
+    async (cell: Cell, count: number) => {
       const key = cellKey(cell.date, cell.hour);
+      let previousCount = 0;
 
       setMarks((previous) => {
-        const next = new Set(previous);
-        if (on) next.add(key);
-        else next.delete(key);
+        previousCount = previous.get(key) ?? 0;
+        const next = new Map(previous);
+        if (count <= 0) next.delete(key);
+        else next.set(key, count);
         return next;
       });
 
       const response = await fetch("/api/tallies", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date: cell.date, hour: cell.hour, on }),
+        body: JSON.stringify({ date: cell.date, hour: cell.hour, count }),
       }).catch(() => null);
 
       if (!response?.ok) {
         setMarks((previous) => {
-          const next = new Set(previous);
-          if (on) next.delete(key);
-          else next.add(key);
+          const next = new Map(previous);
+          if (previousCount <= 0) next.delete(key);
+          else next.set(key, previousCount);
           return next;
         });
         flash("Nie udało się zapisać");
@@ -92,12 +95,14 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
       return;
     }
 
-    if (marks.has(cellKey(cell.date, cell.hour))) {
-      flash(`${pad(cell.hour)}:00 jest już zapisana`);
+    const current = marks.get(cellKey(cell.date, cell.hour)) ?? 0;
+
+    if (current >= MAX_PER_HOUR) {
+      flash(`${pad(cell.hour)}:00 ma już ${MAX_PER_HOUR} kreski`);
       return;
     }
 
-    void write(cell, true);
+    void write(cell, current + 1);
     flash(`Zapisano ${pad(cell.hour)}:00`);
   }, [days, flash, marks, now, write]);
 
@@ -117,19 +122,27 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
   );
 
   const hourSums = useMemo(
-    () => HOURS.map((hour) => days.filter((day) => marks.has(cellKey(day.date, hour))).length),
+    () =>
+      HOURS.map((hour) =>
+        days.reduce((total, day) => total + (marks.get(cellKey(day.date, hour)) ?? 0), 0),
+      ),
     [days, marks],
   );
 
   const daySums = useMemo(
-    () => days.map((day) => HOURS.filter((hour) => marks.has(cellKey(day.date, hour))).length),
+    () =>
+      days.map((day) =>
+        HOURS.reduce((total, hour) => total + (marks.get(cellKey(day.date, hour)) ?? 0), 0),
+      ),
     [days, marks],
   );
+
+  const total = useMemo(() => [...marks.values()].reduce((sum, count) => sum + count, 0), [marks]);
 
   const peakSum = Math.max(...hourSums);
   const columns = `var(--tally-gutter) repeat(${days.length}, var(--tally-cell)) var(--tally-gutter)`;
   const selectedDay = selected ? days.find((day) => day.date === selected.date) : undefined;
-  const selectedMarked = selected ? marks.has(cellKey(selected.date, selected.hour)) : false;
+  const selectedCount = selected ? (marks.get(cellKey(selected.date, selected.hour)) ?? 0) : 0;
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden">
@@ -141,7 +154,7 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
           </p>
         </div>
         <div className="text-right">
-          <p className="text-2xl leading-none font-medium">{marks.size}</p>
+          <p className="text-2xl leading-none font-medium">{total}</p>
           <p className="text-muted-foreground text-[9px] tracking-[0.1em] uppercase">kresek</p>
         </div>
       </header>
@@ -181,7 +194,7 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
                 </div>
 
                 {days.map((day) => {
-                  const marked = marks.has(cellKey(day.date, hour));
+                  const count = marks.get(cellKey(day.date, hour)) ?? 0;
                   const future = isFuture(day.date, hour, now);
                   const current = day.date === now.date && hour === now.hour;
 
@@ -191,7 +204,7 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
                       type="button"
                       disabled={future}
                       onClick={() => setSelected({ date: day.date, hour })}
-                      aria-label={`${marked ? "Kreska" : "Brak kreski"}, ${day.dayOfMonth}.10, godzina ${pad(hour)}`}
+                      aria-label={`${count === 0 ? "Brak kresek" : `Kreski: ${count}`}, ${day.dayOfMonth}.10, godzina ${pad(hour)}`}
                       className={[
                         "flex items-center justify-center",
                         future ? "bg-background cursor-default" : "bg-card cursor-pointer",
@@ -199,9 +212,14 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
                       ].join(" ")}
                       style={{ height: "var(--tally-row)" }}
                     >
-                      {marked ? (
-                        <span className="bg-foreground block h-[64%] w-[2px] md:w-[3px]" />
-                      ) : null}
+                      <span className="flex h-full items-center justify-center gap-[2px]">
+                        {Array.from({ length: count }, (_, index) => (
+                          <span
+                            key={index}
+                            className="bg-foreground block h-[64%] w-[2px] md:w-[3px]"
+                          />
+                        ))}
+                      </span>
                     </button>
                   );
                 })}
@@ -321,17 +339,23 @@ export function TallyBoard({ days, tallies, now: initialNow }: Props) {
           </div>
 
           <DrawerFooter className="mx-auto w-full max-w-xs">
-            <Button
-              variant={selectedMarked ? "secondary" : "default"}
-              onClick={() => {
-                if (!selected) return;
-                void write(selected, !selectedMarked);
-                setSelected(null);
-              }}
-              className="h-12 w-full rounded-none text-xs font-bold tracking-[0.14em] uppercase"
-            >
-              {selectedMarked ? "Usuń kreskę" : "Postaw kreskę"}
-            </Button>
+            <div className="flex w-full gap-px">
+              {Array.from({ length: MAX_PER_HOUR + 1 }, (_, count) => (
+                <Button
+                  key={count}
+                  variant={count === selectedCount ? "default" : "secondary"}
+                  aria-pressed={count === selectedCount}
+                  onClick={() => {
+                    if (!selected) return;
+                    void write(selected, count);
+                    setSelected(null);
+                  }}
+                  className="h-12 flex-1 rounded-none text-xs font-bold tracking-[0.14em] uppercase"
+                >
+                  {count === 0 ? "Brak" : "|".repeat(count)}
+                </Button>
+              ))}
+            </div>
           </DrawerFooter>
         </DrawerContent>
       </Drawer>

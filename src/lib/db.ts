@@ -15,6 +15,7 @@ function connect(): Database.Database {
     CREATE TABLE IF NOT EXISTS tallies (
       date TEXT NOT NULL,
       hour INTEGER NOT NULL,
+      count INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (date, hour)
     );
@@ -27,16 +28,22 @@ function getDb(): Database.Database {
   return db;
 }
 
-export type Tally = { date: string; hour: number };
+export type Tally = { date: string; hour: number; count: number };
 
 export function listTallies(): Tally[] {
-  return getDb().prepare("SELECT date, hour FROM tallies").all() as Tally[];
+  return getDb().prepare("SELECT date, hour, count FROM tallies").all() as Tally[];
 }
 
-export function addTally(date: string, hour: number): void {
-  getDb().prepare("INSERT OR IGNORE INTO tallies (date, hour) VALUES (?, ?)").run(date, hour);
-}
+export function setTally(date: string, hour: number, count: number): void {
+  if (count <= 0) {
+    getDb().prepare("DELETE FROM tallies WHERE date = ? AND hour = ?").run(date, hour);
+    return;
+  }
 
-export function removeTally(date: string, hour: number): void {
-  getDb().prepare("DELETE FROM tallies WHERE date = ? AND hour = ?").run(date, hour);
+  getDb()
+    .prepare(
+      `INSERT INTO tallies (date, hour, count) VALUES (?, ?, ?)
+       ON CONFLICT (date, hour) DO UPDATE SET count = excluded.count`,
+    )
+    .run(date, hour, count);
 }

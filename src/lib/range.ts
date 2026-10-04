@@ -1,6 +1,7 @@
 export const START_DATE = "2026-10-03";
 export const DAYS = 15;
 export const HOURS = 24;
+export const MAX_PER_HOUR = 2;
 
 const WEEKDAYS = ["Nd", "Pn", "Wt", "Śr", "Cz", "Pt", "So"];
 

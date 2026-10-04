@@ -3,8 +3,8 @@
 A fixed two-week grid for noticing when you reach for a time waster. Hours run
 down the Y axis, days across the X axis. Catch yourself opening YouTube or
 Instagram, mark the hour, and keep going - the point is the moment of awareness,
-not stopping. One mark per hour is the maximum; coming back fifteen minutes
-later is still the same mark.
+not stopping. Two marks per hour is the maximum: a second slip in the same hour
+is worth recording, a third is not realistic within sixty minutes.
 
 ## Stack
 
@@ -13,7 +13,7 @@ better-sqlite3 with no ORM. One Docker container.
 
 ## Period
 
-`src/lib/range.ts` holds `START_DATE` and `DAYS`. The current period is
+`src/lib/range.ts` holds `START_DATE`, `DAYS` and `MAX_PER_HOUR`. The current period is
 2026-10-03 through 2026-10-17. Changing the period is a one-line edit; existing
 rows outside the new window stay in the database but are not shown.
 
